@@ -1,0 +1,44 @@
+version: "3"
+services:
+  # api:
+  #   build:
+  #     context: .
+  #   container_name: api
+  #   environment:
+  #     - 'SECRET_KEY="xg_#+0q0!95dzz2%er%jnfq646q9jv*xk1dsvcxsu(+g@j)nf"'
+  #     - DEBUG=True
+  #     - ALLOWED_HOSTS=['*']
+  #     - POSTGRES_DB_NAME=mlnewsdb
+  #     - POSTGRES_USER=postgres
+  #     - POSTGRES_PASSWORD=nuTho8riChefoh4l
+  #     - POSTGRES_HOST=ml-postgres
+  #     - POSTGRES_PORT=5432
+  #   ports:
+  #     - "8001:80"
+  postgres:
+    container_name: postgres_container
+    image: postgres:12.5
+    environment:
+      POSTGRES_USER: doadmin
+      POSTGRES_PASSWORD: pir512vlxwa2f4co
+      POSTGRES_DB: mlnews
+      PGDATA: /data/postgres
+
+    volumes:
+      - postgres:/data/postgres
+    ports:
+      - "5432:5432"
+    networks:
+      - postgres
+    restart: unless-stopped
+
+# networks:
+#   default:
+#     external:
+#       name: ml
+networks:
+  postgres:
+    driver: bridge
+volumes:
+  postgres:
+  pgadmin:

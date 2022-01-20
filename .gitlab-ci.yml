@@ -1,0 +1,30 @@
+stages:
+ - test
+ - copy-code
+ - deploy
+
+Test:
+  stage: test
+  script:
+    - echo "test will be put here"
+  only:
+    - staging-server
+  tags:
+    - stg-apis
+Copy-code:
+  stage: copy-code
+  script:
+    - rm -rf /home/gitlab-runner/ml/apis/*
+    - cp -rf * /home/gitlab-runner/ml/apis/
+  only:
+    - staging-server
+  tags:
+    - stg-apis
+Deploy:
+  stage: deploy
+  script:
+    - cd ~/ml && ./deploy.sh api
+  only:
+    - staging-server
+  tags:
+    - stg-apis
