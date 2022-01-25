@@ -14,7 +14,9 @@ from django.shortcuts import redirect
 from collections import Counter
 
 from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
+from allauth.socialaccount.providers.facebook.views import FacebookOAuth2Adapter
 from allauth.socialaccount.providers.apple.views import AppleOAuth2Adapter
+from allauth.socialaccount.providers.apple.client import AppleOAuth2Client
 from allauth.socialaccount.providers.oauth2.client import OAuth2Client
 from allauth.account.adapter import get_adapter
 
@@ -33,11 +35,9 @@ from recommended_api.serializer import NewsSerializer
 from .utils import google_get_access_token, google_get_user_info, user_get_or_create, jwt_login
 
 
-DOMAIN = "http://localhost:8000"
-AUTH_GOOGLE_CALLBACK_URL = '/accounts/social/google/login/callback/'
-AUTH_APPLE_CALLBACK_URL = '/accounts/social/apple/login/callback/'
-CONNECT_GOOGLE_CALLBACK_URL = '/users/social/google/connect/'
-CONNECT_APPLE_CALLBACK_URL = '/users/social/apple/connect/'
+DOMAIN = "https://localhost:8000"
+AUTH_CALLBACK_URL = '/accounts/social/{}/login/callback/'
+CONNECT_CALLBACK_URL = '/users/social/{}/connect/'
 
 
 # Like unlike api view
@@ -137,8 +137,12 @@ def update_profile(request):
         serializer = UserProfileSerializer(data=request.data)
 
     if serializer.is_valid():
+        print("*****clean... 0")
+        print(request.data)
         serializer.save()
+        print("*****clean... 1")
         return JsonResponse(serializer.data, status=201)
+    
     return JsonResponse(serializer.errors, status=400)
 
 
@@ -248,38 +252,149 @@ class GoogleConnect(SocialConnectView):
     adapter_class = GoogleOAuth2Adapter
     client_class = OAuth2Client
     serializer_class = SocialLoginSerializer
-    callback_url = "{}{}".format(DOMAIN, CONNECT_GOOGLE_CALLBACK_URL)
+    callback_url = "{}{}".format(DOMAIN, CONNECT_CALLBACK_URL.format('google'))
     
     
 class GoogleLogin(SocialLoginView):
-    renderer_classes = [renderers.JSONRenderer]
+    # renderer_classes = [renderers.JSONRenderer]
     adapter_class = GoogleOAuth2Adapter
     client_class = OAuth2Client
     serializer_class = SocialLoginSerializer
-    callback_url = "{}{}".format(DOMAIN, AUTH_GOOGLE_CALLBACK_URL)
+    callback_url = "{}{}".format(DOMAIN, AUTH_CALLBACK_URL.format('google'))
 
     def get_serializer(self, *args, **kwargs):
         serializer_class = self.get_serializer_class()
         kwargs['context'] = self.get_serializer_context()
         return serializer_class(*args, **kwargs)
     
+class FacebookConnect(SocialConnectView):
+    adapter_class = FacebookOAuth2Adapter
+    client_class = OAuth2Client
+    serializer_class = SocialLoginSerializer
+    callback_url = "{}{}".format(DOMAIN, CONNECT_CALLBACK_URL.format('facebook'))
+    
+
+# class FacebookLogin(SocialLoginView):
+#     adapter_class = FacebookOAuth2Adapter
+    
+class FacebookLogin(SocialLoginView):
+    # renderer_classes = [renderers.JSONRenderer]
+    adapter_class = FacebookOAuth2Adapter
+    # client_class = OAuth2Client
+    # serializer_class = SocialLoginSerializer
+    # callback_url = "{}{}".format(DOMAIN, AUTH_CALLBACK_URL.format('facebook'))
+
+    # def get_serializer(self, *args, **kwargs):
+    #     serializer_class = self.get_serializer_class()
+    #     kwargs['context'] = self.get_serializer_context()
+    #     return serializer_class(*args, **kwargs)
+    
+
+
+# https://stackoverflow.com/questions/64850805/apple-login-in-django-rest-framework-with-allauth-and-rest-auth
+class CustomAppleSocialLoginSerializer(SocialLoginSerializer):
+    def validate(self, attrs):
+        view = self.context.get('view')
+        request = self._get_request()
+
+        if not view:
+            raise serializers.ValidationError(
+                _('View is not defined, pass it as a context variable')
+            )
+
+        adapter_class = getattr(view, 'adapter_class', None)
+        if not adapter_class:
+            raise serializers.ValidationError(_('Define adapter_class in view'))
+
+        adapter = adapter_class(request)
+        app = adapter.get_provider().get_app(request)
+
+        # More info on code vs access_token
+        # http://stackoverflow.com/questions/8666316/facebook-oauth-2-0-code-and-token
+
+        # Case 1: We received the access_token
+        if attrs.get('access_token'):
+            access_token = attrs.get('access_token')
+            token = {'access_token': access_token}
+
+        # Case 2: We received the authorization code
+        elif attrs.get('code'):
+            self.callback_url = getattr(view, 'callback_url', None)
+            self.client_class = getattr(view, 'client_class', None)
+
+            if not self.callback_url:
+                raise serializers.ValidationError(
+                    _('Define callback_url in view')
+                )
+            if not self.client_class:
+                raise serializers.ValidationError(
+                    _('Define client_class in view')
+                )
+
+            code = attrs.get('code')
+
+            provider = adapter.get_provider()
+            scope = provider.get_scope(request)
+            client = self.client_class(
+                request,
+                app.client_id,
+                app.secret,
+                adapter.access_token_method,
+                adapter.access_token_url,
+                self.callback_url,
+                scope,
+                key=app.key,
+                cert=app.cert,
+            )
+            token = client.get_access_token(code)
+            access_token = token['access_token']
+
+        else:
+            raise serializers.ValidationError(
+                _('Incorrect input. access_token or code is required.'))
+
+        social_token = adapter.parse_token(token)  # The important change is here.
+        social_token.app = app
+
+        try:
+            login = self.get_social_login(adapter, app, social_token, access_token)
+            complete_social_login(request, login)
+        except HTTPError:
+            raise serializers.ValidationError(_('Incorrect value'))
+
+        if not login.is_existing:
+            # We have an account already signed up in a different flow
+            # with the same email address: raise an exception.
+            # This needs to be handled in the frontend. We can not just
+            # link up the accounts due to security constraints
+            if allauth_settings.UNIQUE_EMAIL:
+                # Do we have an account already with this email address?
+                if get_user_model().objects.filter(email=login.user.email).exists():
+                    raise serializers.ValidationError(_('E-mail already registered using different signup method.'))
+
+            login.lookup()
+            login.save(request, connect=True)
+
+        attrs['user'] = login.account.user
+        return attrs
 
 class AppleConnect(SocialConnectView):
     adapter_class = GoogleOAuth2Adapter
-    client_class = OAuth2Client
+    client_class = AppleOAuth2Client
     serializer_class = SocialLoginSerializer
-    callback_url = "{}{}".format(DOMAIN, CONNECT_APPLE_CALLBACK_URL)
+    # serializer_class = CustomAppleSocialLoginSerializer
+    callback_url = "{}{}".format(DOMAIN, CONNECT_CALLBACK_URL.format('apple'))
     
     
 class AppleLogin(SocialLoginView):
     adapter_class = AppleOAuth2Adapter
-    client_class = OAuth2Client
+    client_class = AppleOAuth2Client
     serializer_class = SocialLoginSerializer
-    callback_url = "{}{}".format(DOMAIN, AUTH_APPLE_CALLBACK_URL)
+    # serializer_class = CustomAppleSocialLoginSerializer
+    callback_url = "{}{}".format(DOMAIN, AUTH_CALLBACK_URL.format('apple'))
 
     def get_serializer(self, *args, **kwargs):
         serializer_class = self.get_serializer_class()
         kwargs['context'] = self.get_serializer_context()
         return serializer_class(*args, **kwargs)
     
-

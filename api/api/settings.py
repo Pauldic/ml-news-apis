@@ -28,11 +28,11 @@ SECRET_KEY = config('SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 #DEBUG = config('DEBUG',default=False, cast=bool)
 
-DEBUG = True
+DEBUG = config('DEBUG', default=True, cast=bool)
 
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='*', cast=Csv())
-BASE_FRONTEND_URL = config('DJANGO_BASE_FRONTEND_URL', default='http://localhost:3000')
-
+BASE_FRONTEND_URL = config('REACTJS_FRONTEND_URL', default='http://localhost:3000')
+APPEND_SLASH = True
 
 # Application definition
 
@@ -49,10 +49,6 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework.authtoken',
     
-    # rest auth
-    # 'rest_auth',
-    # 'rest_auth.registration',
-    
     #all auth
     'allauth',
     'allauth.account',
@@ -61,6 +57,7 @@ INSTALLED_APPS = [
     'dj_rest_auth.registration',
     'allauth.socialaccount.providers.apple',
     'allauth.socialaccount.providers.google',
+    'allauth.socialaccount.providers.facebook',
 
     # filter
     'django_filters',
@@ -73,23 +70,29 @@ INSTALLED_APPS = [
     'recommended_api',
 ]
 
+
+if DEBUG:
+    INSTALLED_APPS.append("sslserver")
+    
+    
 SITE_ID = 1
 
-ACCOUNT_AUTHENTICATION_METHOD = 'email'
+ACCOUNT_AUTHENTICATION_METHOD = 'username'
 ACCOUNT_USERNAME_REQUIRED = False
 ACCOUNT_EMAIL_REQUIRED = True
 ACCOUNT_UNIQUE_EMAIL = True
 ACCOUNT_AUTHENTICATED_LOGIN_REDIRECTS = False
 SOCIALACCOUNT_QUERY_EMAIL = True
 SOCIALACCOUNT_PROVIDERS = {
-    'google': {
+    # https://blog.ryandinath.io/google-authentication-with-django-allauth-and-react/
+    "google": {
         # For each OAuth based provider, either add a ``SocialApp``
         # (``socialaccount`` app) containing the required client
         # credentials, or list them here:
-        'APP': {
-            'client_id': config('GOOGLE_ID', default=''),
-            'secret': config('GOOGLE_SECRET', default=''),
-            'key': config('GOOGLE_KEY', default='')
+        "APP": {
+            "client_id": config('GOOGLE_ID', default=''),
+            "secret": config('GOOGLE_SECRET', default=''),
+            "key": config('GOOGLE_KEY', default='')
         },
         # These are provider-specific settings that can only be listed here:
         "SCOPE": [
@@ -99,6 +102,55 @@ SOCIALACCOUNT_PROVIDERS = {
         "AUTH_PARAMS": {
             "access_type": "offline",
         }
+    },
+    "apple": {
+        "APP": {
+            # https://django-allauth.readthedocs.io/en/latest/providers.html#apple
+            # https://developer.apple.com/documentation/sign_in_with_apple/displaying_sign_in_with_apple_buttons_on_the_web
+            # https://python.plainenglish.io/how-to-integrate-sign-in-with-apple-into-your-django-project-30203c0f19ca
+            # https://medium.com/identity-beyond-borders/how-to-configure-sign-in-with-apple-77c61e336003
+            # https://medium.com/identity-beyond-borders/adding-sign-in-with-apple-to-your-app-in-under-5mins-with-zero-code-ce36966b03f0
+            "client_id": config('APPLE_ID', default=''),
+            "secret": config('APPLE_SECRET', default=''),
+             # Member ID/App ID Prefix -- you can find it below your name
+             # at the top right corner of the page, or it’s your App ID
+             # Prefix in your App ID.
+            "key": config('APPLE_KEY', default=''),
+            # The certificate you downloaded when generating the key.
+            "certificate_key": config('APPLE_CERT', default=""""""),
+        }
+    },
+    'facebook': {
+        "APP": {
+            "client_id": config('FACEBOOK_ID', default=''),
+            "secret": config('FACEBOOK_SECRET', default=''),
+            "key": config('FACEBOOK_KEY', default='')
+        },
+        'METHOD': 'oauth2',
+        'SDK_URL': '//connect.facebook.net/{locale}/sdk.js',
+        'SCOPE': [
+            'email',
+            'public_profile',
+            # 'user_friends'
+        ],
+        'AUTH_PARAMS': {'auth_type': 'reauthenticate'},
+        'FIELDS': [
+            'id',
+            'email',
+            'name',
+            'first_name',
+            'last_name',
+            'verified',
+            'locale',
+            'timezone',
+            'link',
+            'gender',
+            'updated_time'
+        ],
+        'EXCHANGE_TOKEN': True,
+        'LOCALE_FUNC': lambda request: 'en_US',
+        'VERIFIED_EMAIL': True,
+        'VERSION': 'v12.0'
     }
 }
 
@@ -118,14 +170,13 @@ REST_FRAMEWORK = {
 }
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
+    'django.contrib.sessions.middleware.SessionMiddleware',
     # 'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'corsheaders.middleware.CorsMiddleware',
 ]
 
 ROOT_URLCONF = 'api.urls'
@@ -182,33 +233,9 @@ else:
             'NAME': os.path.join(BASE_DIR, 'db.sqlite3'),
         }
     }
-    INSTALLED_APPS.append("sslserver")
-    
-CORS_ALLOW_HEADERS = [
-    'accept',
-    'accept-encoding',
-    'authorization',
-    'content-type',
-    'dnt',
-    'origin',
-    'user-agent',
-    'x-csrftoken',
-    'x-requested-with',
-]
 
-CORS_ALLOW_METHODS = [
-    'DELETE',
-    'GET',
-    'OPTIONS',
-    'PATCH',
-    'POST',
-    'PUT',
-]
-
-# CORS_ORIGIN_ALLOW_ALL = True
 CORS_ALLOW_CREDENTIALS = True
-CORS_ORIGIN_WHITELIST = config('DJANGO_BASE_FRONTEND_URL', default=BASE_FRONTEND_URL, cast=Csv())
-
+CORS_ORIGIN_WHITELIST = config('DJANGO_BASE_FRONTEND_URLS', default=BASE_FRONTEND_URL, cast=Csv())
 
 
 # Password validation
